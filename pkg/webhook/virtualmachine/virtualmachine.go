@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/k8snetworkplumbingwg/kubemacpool/pkg/cni"
 	"math/rand"
 	"net/http"
 	"reflect"
@@ -90,6 +91,12 @@ func (a *virtualMachineAnnotator) Handle(ctx context.Context, req admission.Requ
 		}
 	}
 
+	err = a.mutateVirtualMachineFitCNI(virtualMachine, logger)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError,
+			fmt.Errorf("Failed to update virtual machine to fit cni: %v", err))
+	}
+
 	// admission.PatchResponse generates a Response containing patches.
 	return patchVMChanges(originalVirtualMachine, virtualMachine, logger)
 }
@@ -113,6 +120,13 @@ func patchVMChanges(originalVirtualMachine, currentVirtualMachine *kubevirt.Virt
 				return admission.Errored(http.StatusInternalServerError, err)
 			}
 			kubemapcoolJsonPatches = append(kubemapcoolJsonPatches, interfacePatches...)
+		}
+
+		originalTemplateAnnotations := originalVirtualMachine.Spec.Template.ObjectMeta.GetAnnotations()
+		currentTemplateAnnotations := currentVirtualMachine.Spec.Template.ObjectMeta.GetAnnotations()
+		if currentTemplateAnnotations != nil && !reflect.DeepEqual(originalTemplateAnnotations, currentTemplateAnnotations) {
+			templateAnnotationPatch := jsonpatch.NewOperation("replace", "/spec/template/metadata/annotations", currentTemplateAnnotations)
+			kubemapcoolJsonPatches = append(kubemapcoolJsonPatches, templateAnnotationPatch)
 		}
 	}
 
@@ -245,6 +259,14 @@ func getAnnotationsWithoutTransactionTimestamp(virtualMachine *kubevirt.VirtualM
 // isVirtualMachineInterfacesChanged checks if the vm interfaces changed in this webhook update request.
 func isVirtualMachineInterfacesChanged(previousVirtualMachine, virtualMachine *kubevirt.VirtualMachine) bool {
 	return !reflect.DeepEqual(previousVirtualMachine.Spec.Template.Spec.Domain.Devices.Interfaces, virtualMachine.Spec.Template.Spec.Domain.Devices.Interfaces)
+}
+
+func (a *virtualMachineAnnotator) mutateVirtualMachineFitCNI(virtualMachine *kubevirt.VirtualMachine, parentLogger logr.Logger) error {
+	factory := cni.MutateVirtualMachineFactory{}
+	if err := factory.Run(virtualMachine, parentLogger); err !=nil {
+		return err
+	}
+	return nil
 }
 
 // InjectClient injects the client into the podAnnotator
