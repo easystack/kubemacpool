@@ -7,7 +7,38 @@ import (
 	"testing"
 )
 
-func makeVirtualMachine() *kubevirt.VirtualMachine {
+func makeVirtualMachineWithDefaultPodNetwork() *kubevirt.VirtualMachine {
+	return &kubevirt.VirtualMachine{
+		Spec: kubevirt.VirtualMachineSpec{
+			Template: &kubevirt.VirtualMachineInstanceTemplateSpec{
+				Spec: kubevirt.VirtualMachineInstanceSpec{
+					Domain: kubevirt.DomainSpec{
+						Devices: kubevirt.Devices{
+							Interfaces: []kubevirt.Interface{
+								{
+									Name: "net",
+									InterfaceBindingMethod: kubevirt.InterfaceBindingMethod{
+										Masquerade: &kubevirt.InterfaceMasquerade{},
+									},
+								},
+							},
+						},
+					},
+					Networks: []kubevirt.Network{
+						{
+							Name: "net",
+							NetworkSource: kubevirt.NetworkSource{
+								Pod: &kubevirt.PodNetwork{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func makeVirtualMachineWithMultus() *kubevirt.VirtualMachine {
 	return &kubevirt.VirtualMachine{
 		Spec: kubevirt.VirtualMachineSpec{
 			Template: &kubevirt.VirtualMachineInstanceTemplateSpec{
@@ -42,8 +73,23 @@ func makeVirtualMachine() *kubevirt.VirtualMachine {
 	}
 }
 
+func TestDefaultPodNetWork(t *testing.T) {
+	vm := makeVirtualMachineWithDefaultPodNetwork()
+	log := ctrl.Log.WithName("TestFitCNI")
+
+	factory := MutateVirtualMachineFactory{}
+	if err := factory.Run(vm, log); err != nil {
+		t.Errorf("Test failed: %v", err)
+	}
+
+	templateAnnotations := vm.Spec.Template.ObjectMeta.GetAnnotations()
+	if _, ok := templateAnnotations[kubeovn.MAC_ADDRESS_ANNOTATION_KEY]; ok {
+		t.Errorf("Test failed")
+	}
+}
+
 func TestFitCNI(t *testing.T) {
-	vm := makeVirtualMachine()
+	vm := makeVirtualMachineWithMultus()
 	log := ctrl.Log.WithName("TestFitCNI")
 
 	factory := MutateVirtualMachineFactory{}
