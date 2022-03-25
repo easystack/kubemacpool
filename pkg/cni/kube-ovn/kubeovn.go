@@ -40,7 +40,7 @@ func MutateVirtualMachineFitKubeOVNFn(virtualMachine *kubevirt.VirtualMachine, p
 
 func getDefaultMultusName(networks []kubevirt.Network) string {
 	for _, network := range networks {
-		if network.Multus != nil && network.Multus.Default || getNetworkName(network.Multus.NetworkName) == CNI_NAME {
+		if network.Multus != nil && network.Multus.Default && getNetworkName(network.Multus.NetworkName) == CNI_NAME {
 			return network.Name
 		}
 	}
